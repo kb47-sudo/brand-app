@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import numpy as np
+import cloudscraper
 
 # --- ページ基本設定 ---
 st.set_page_config(page_title="ブランド真贋Web解析・3市場価格帯算出システム", layout="wide")
@@ -103,7 +104,6 @@ BRAND_COMPLETION_MAP = {
 def fetch_authenticity_guides(keyword):
     kw_upper = keyword.upper()
     
-    # 1. シャネル（CHANEL）時計 ＆ ジュエリー ＆ バッグ
     if "シャネル" in kw_upper or "CHANEL" in kw_upper or any(w in kw_upper for w in ["マトラッセ", "ボーイシャネル", "ココハンドル", "カンボン", "J12", "プルミエール", "ココマーク"]):
         if any(w in kw_upper for w in ["プルミエール", "J12", "マドモアゼル", "ボーイフレンド", "コードココ", "時計"]):
             return [
@@ -128,7 +128,6 @@ def fetch_authenticity_guides(keyword):
                 {"item": "CHANEL印字ロゴ（C/A/Eの特殊フォント特徴）", "detail": "「C」の切り口が斜め、「A」の頂点が平ら、「E」の真ん中の横線が最も短い特徴を満たしているか。"}
             ]
 
-    # 2. ルイ・ヴィトン（LOUIS VUITTON）時計 ＆ 財布 ＆ バッグ
     elif "ヴィトン" in kw_upper or "LOUIS" in kw_upper or "VUITTON" in kw_upper or any(w in kw_upper for w in ["ネヴァーフル", "スピーディ", "アルマ", "キーポル", "ジッピー", "ポルトフォイユ", "タンブール"]):
         if any(w in kw_upper for w in ["タンブール", "スピンタイム", "時計"]):
             return [
@@ -153,7 +152,6 @@ def fetch_authenticity_guides(keyword):
                 {"item": "ヌメ革の質感・焼けた色合い・コバ塗りの質", "detail": "ハンドル等のヌメ革の肌触り、フチのコバ塗り（赤茶色のニス）の厚みと丁寧さ。"}
             ]
 
-    # 3. エルメス（HERMES）時計 ＆ ジュエリー ＆ 財布 ＆ バッグ
     elif "エルメス" in kw_upper or "HERMES" in kw_upper or any(w in kw_upper for w in ["バーキン", "ケリー", "コンスタンス", "ピコタン", "ボリード", "ガーデンパーティ", "ベアン", "ドゴン", "シルクイン", "シェーヌダンクル", "Hウォッチ", "クリッパー", "ケープコッド"]):
         if any(w in kw_upper for w in ["Hウォッチ", "クリッパー", "ケープコッド", "ナンタケット", "スリム", "時計"]):
             return [
@@ -179,7 +177,6 @@ def fetch_authenticity_guides(keyword):
                 {"item": "🤐 ファスナー止まりの「H」刻印と開閉フィール", "detail": "ファスナーの始点にある金具（「H」型またはriri/ZIP製刻印）の仕上げ精度と、チャック開閉のスムーズさ。"}
             ]
 
-    # 4. ロレックス（ROLEX）全モデル
     elif any(w in kw_upper for w in [
         "ROLEX", "ロレックス", "デイトナ", "DAYTONA", "サブマリーナ", "SUBMARINER", 
         "デイトジャスト", "DATEJUST", "エクスプローラー", "EXPLORER", "GMT", "デイデイト", 
@@ -199,7 +196,6 @@ def fetch_authenticity_guides(keyword):
             {"item": "リューズ（クラウン）のねじ込み感と立体マーク", "detail": "リューズに刻印された王冠マークやドット/ライン（金属素材表示）の立体感と、ねじ込む際のズレのないスムーズ感。"}
         ]
 
-    # 5. パテック フィリップ 全モデル
     elif any(w in kw_upper for w in ["パテック", "PATEK", "カラトラバ", "CALATRAVA", "ノーチラス", "NAUTILUS", "アクアノート", "AQUANAUT", "5196", "5711", "5167"]):
         return [
             {"item": "🏛️ ジュネーブ・シール / PPシール（ムーブメント刻印）", "detail": "シースルーバックから見えるムーブメント上に打刻されたPPマーク/ジュネーブ・シールのフォント精度と仕上げ。"},
@@ -211,7 +207,6 @@ def fetch_authenticity_guides(keyword):
             {"item": "針（ポインター）の立体カッティングと鏡面磨き", "detail": "立体的にカッティングされた針の表面およびエッジが歪みなく完璧に鏡面磨き（ブラックポリッシュ）されているか。"}
         ]
 
-    # 6. オメガ（OMEGA）全モデル
     elif any(w in kw_upper for w in ["オメガ", "OMEGA", "シーマスター", "SEAMASTER", "スピードマスター", "SPEEDMASTER", "310.30", "210.30"]):
         return [
             {"item": "🌊 ケースバック（裏蓋）のシーホース/地球儀刻印", "detail": "シーホース（海馬）刻印の立体感や線の深さ、またケース裏の地球儀ホログラム刻印の精密さ。"},
@@ -221,7 +216,6 @@ def fetch_authenticity_guides(keyword):
             {"item": "🔗 ブレスレット・クラスプのロゴ刻印", "detail": "クラスプ（バックル）部分の「OMEGA Seamaster」刻印のフォント精度と伸縮機構の滑らかさ。"}
         ]
 
-    # 7. その他 高級時計全般
     elif any(w in kw_upper for w in [
         "AP", "オーデマ", "ロイヤルオーク", "ヴァシュロン", "ウブロ", "HUBLOT", "ビッグバン", 
         "IWC", "カルティエ", "CARTIER", "タンク", "サントス", "パシャ", "バロンブルー", 
@@ -234,7 +228,6 @@ def fetch_authenticity_guides(keyword):
             {"item": "クラスプ・バックル刻印精度", "detail": "バックル内部のブランドロゴ刻印の深さ・エッジの面取り処理の丁寧さ。"}
         ]
 
-    # 8. その他 ブランド品全般（デフォルト）
     else:
         return [
             {"item": "ブランド印字・ロゴ刻印フォント", "detail": "ロゴ刻印の文字配置が均一で、印字にフォントの乱れや滲みがないか。"},
@@ -243,17 +236,15 @@ def fetch_authenticity_guides(keyword):
             {"item": "縫製（ステッチ）のピッチとコバの処理", "detail": "糸の太さ・縫い目ピッチの一貫性、縁のコバニスの仕上げ。"}
         ]
 
-# --- WEBスクレイピング＆相場幅算出 ---
+# --- WEBスクレイピング＆相場幅算出（CloudScraper対応・海外IP遮断回避） ---
 def search_clean_market_prices(search_query, selected_material, selected_type, selected_dial, selected_deco):
     raw_query = search_query.strip()
     
-    # 単体モデル名の場合はブランド名を自動展開
     for key, val in BRAND_COMPLETION_MAP.items():
         if raw_query == key:
             raw_query = val
             break
             
-    # 素材・アイテム・文字盤・装飾の絞り込み条件の付加
     full_query_parts = [raw_query]
     if selected_material != "全素材":
         full_query_parts.append(selected_material)
@@ -267,19 +258,24 @@ def search_clean_market_prices(search_query, selected_material, selected_type, s
     search_query = " ".join(full_query_parts)
             
     url = f"https://auctions.yahoo.co.jp/search/search?p={search_query}&va={search_query}&exflg=1&b=1&n=50"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
     
     q_upper = search_query.upper()
     min_price_threshold = 30000
     if any(w in q_upper for w in ["デイトナ", "ロレックス", "ROLEX", "パテック", "PATEK", "バーキン", "ケリー", "116500", "126610"]):
-        min_price_threshold = 300000
+        min_price_threshold = 200000
     elif any(w in q_upper for w in ["デイトジャスト", "オメガ", "シャネル", "マトラッセ", "シェーヌダンクル"]):
-        min_price_threshold = 100000
+        min_price_threshold = 80000
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        # cloudscraperを使用してWebアクセスのCloudflare/UserAgentブロックを自動回避
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
+        )
+        response = scraper.get(url, timeout=12)
         if response.status_code != 200:
             return None, []
         
@@ -339,7 +335,7 @@ with col1:
     st.subheader("1. 型番・モデル名の入力")
     search_keyword = st.text_input(
         "型番やブランドモデル名を入力してください", 
-        placeholder="例: デイトジャスト, シェーヌダンクル, プルミエール, タンブール, バーキン25"
+        placeholder="例: デイトジャスト, 116500LN, プルミエール, タンブール, シェーヌダンクル"
     )
     
     st.markdown("**⚙️ 素材・アイテム・時計仕様の絞り込み（オプション）**")
@@ -373,7 +369,8 @@ with col1:
     st.markdown("""
     ---
     **💡 入力のコツ:**
-    - 時計（`デイトジャスト`, `デイトナ`, `タンブール`, `プルミエール` 等）は「素材（コンビ/無垢）」や「文字盤色」「ダイヤ有無」を指定すると価格帯精度が大幅に向上します。
+    - 型番（`116500LN`, `M46035` 等）での検索は一発でピンポイント相場が出力されます。
+    - 単体モデル名で検索する場合は「素材」や「文字盤色」を指定すると価格帯精度が向上します。
     """)
 
 with col2:
