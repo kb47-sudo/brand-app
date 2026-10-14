@@ -243,9 +243,9 @@ def execute_web_scrape(query):
     q_upper = query.upper()
     min_price_threshold = 30000
     if any(w in q_upper for w in ["デイトナ", "ロレックス", "ROLEX", "パテック", "PATEK", "バーキン", "ケリー", "116500", "126610"]):
-        min_price_threshold = 150000
+        min_price_threshold = 100000
     elif any(w in q_upper for w in ["デイトジャスト", "オメガ", "シャネル", "マトラッセ", "シェーヌダンクル"]):
-        min_price_threshold = 50000
+        min_price_threshold = 30000
 
     try:
         scraper = cloudscraper.create_scraper(
@@ -311,13 +311,11 @@ def execute_web_scrape(query):
 def search_clean_market_prices(search_query, selected_material, selected_type, selected_dial, selected_deco):
     raw_query = search_query.strip()
     
-    # 補完マップ適用
     for key, val in BRAND_COMPLETION_MAP.items():
         if raw_query == key:
             raw_query = val
             break
 
-    # 段階的フォールバック検索（指定がある時だけクエリに付加）
     search_queries_to_try = []
     
     # 1. フル条件
@@ -334,10 +332,9 @@ def search_clean_market_prices(search_query, selected_material, selected_type, s
     if selected_material != "全素材":
         search_queries_to_try.append(f"{raw_query} {selected_material}")
 
-    # 3. 単体モデル名/型番のみ（未選択時・セーフティ用）
+    # 3. 単体モデル名/型番のみ（最終セーフティ）
     search_queries_to_try.append(raw_query)
 
-    # 順番にWebスクレイピングを実行し、ヒットした最精度の結果を採用
     for q in search_queries_to_try:
         stats, items = execute_web_scrape(q)
         if stats:
@@ -386,8 +383,7 @@ with col1:
     st.markdown("""
     ---
     **💡 入力のコツ:**
-    - **未選択でも動作:** 条件を選ばなくても全体相場が出力されます。条件を選ぶ（例: `ステンレス` ＋ `黒文字盤`）とさらに細かく絞り込めます。
-    - 型番（`116500LN`, `M46035` 等）での直接検索にも対応しています。
+    - 未選択でも全体相場が出力されます。条件を選ぶとピンポイントで相場が絞り込まれます。
     """)
 
 with col2:
@@ -413,54 +409,55 @@ with col2:
         with st.spinner(f"Webから【{analyzed_kw}】の市場データを高速集計中..."):
             stats, items = search_clean_market_prices(analyzed_kw, mat, typ, dial, deco)
             
+            # --- 相場表示セクション（取得できた場合表示） ---
             if stats:
                 st.success(f"✅ Web上の本体有効データ ({stats['count']}件 / 検索軸: 『{stats['query_used']}』) から3市場の相場幅を自動出力しました！")
-                
-                # 相場幅の表示
                 st.markdown("### 💰 3市場 価格幅（レンジ）相場")
-                
                 st.info(f"🏢 **買取店 買取相場:** **¥{stats['buyback_min']:,}** 〜 **¥{stats['buyback_max']:,}**")
                 st.success(f"🛍️ **フリマ販売相場:** **¥{stats['flea_min']:,}** 〜 **¥{stats['flea_max']:,}**")
                 st.warning(f"🔨 **オークション相場:** **¥{stats['auc_min']:,}** 〜 **¥{stats['auc_max']:,}**")
-                
-                st.divider()
-                
-                # 超詳細プロ仕様 真贋鑑定セクション
-                st.markdown(f"### 🛡️ 【{analyzed_kw}】専用 高度プロ真贋鑑定・解析フォーム")
-                st.write("対象ブランド・品目に合わせたプロ査定基準チェック項目です。手元の実物と照合してチェックを入れてください。")
-                
-                guides = fetch_authenticity_guides(analyzed_kw)
-                check_results = []
-                
-                for idx, g in enumerate(guides):
-                    st.write(f"**{idx+1}. {g['item']}**")
-                    st.caption(g['detail'])
-                    res = st.radio(
-                        f"判定_{idx}", 
-                        options=["✅ 基準適合（本物の特徴と一致）", "⚠️ 判定留保・微妙", "🚨 基準外（問題あり・偽物の特徴）"], 
-                        key=f"check_{idx}",
-                        label_visibility="collapsed"
-                    )
-                    check_results.append(res)
-                    st.write("")
-                
-                # 総合判定
-                ok_count = sum(1 for r in check_results if "✅" in r)
-                warn_count = sum(1 for r in check_results if "⚠️" in r)
-                ng_count = sum(1 for r in check_results if "🚨" in r)
-                total_items = len(guides)
-                score = int((ok_count / total_items) * 100)
-                
-                st.markdown("### 📋 総合真贋解析判定結果")
-                st.progress(score)
-                
-                if ng_count > 0:
-                    st.error(f"🚨 **判定結果: 基準外リスク高（適合度: {score}%）**\n\n不適合項目（{ng_count}件）が検出されました。偽物・コピー品のリスクが高いためご注意ください。")
-                elif warn_count > 1:
-                    st.warning(f"⚠️ **判定結果: 要詳細査定（適合度: {score}%）**\n\n一部の項目（{warn_count}件）で留保されています。詳細査定をおすすめします。")
-                else:
-                    st.success(f"🟢 **判定結果: 基準内（正規品の可能性極めて高 / 適合度: {score}%）**\n\nすべてのWeb基準項目を満たしています。提示相場での査定を行っていただけます。")
+            else:
+                st.warning("⚠️ 現在Web市場からの直接相場取得が混雑または制限されています。以下の『プロ真贋鑑定・解析フォーム』をご活用ください。")
 
+            st.divider()
+            
+            # --- 超詳細プロ仕様 真贋鑑定セクション（相場取得成否に関わらず100%必ず表示） ---
+            st.markdown(f"### 🛡️ 【{analyzed_kw}】専用 高度プロ真贋鑑定・解析フォーム")
+            st.write("対象ブランド・品目に合わせたプロ査定基準チェック項目です。手元の実物と照合してチェックを入れてください。")
+            
+            guides = fetch_authenticity_guides(analyzed_kw)
+            check_results = []
+            
+            for idx, g in enumerate(guides):
+                st.write(f"**{idx+1}. {g['item']}**")
+                st.caption(g['detail'])
+                res = st.radio(
+                    f"判定_{idx}", 
+                    options=["✅ 基準適合（本物の特徴と一致）", "⚠️ 判定留保・微妙", "🚨 基準外（問題あり・偽物の特徴）"], 
+                    key=f"check_{idx}",
+                    label_visibility="collapsed"
+                )
+                check_results.append(res)
+                st.write("")
+            
+            # 総合判定
+            ok_count = sum(1 for r in check_results if "✅" in r)
+            warn_count = sum(1 for r in check_results if "⚠️" in r)
+            ng_count = sum(1 for r in check_results if "🚨" in r)
+            total_items = len(guides)
+            score = int((ok_count / total_items) * 100)
+            
+            st.markdown("### 📋 総合真贋解析判定結果")
+            st.progress(score)
+            
+            if ng_count > 0:
+                st.error(f"🚨 **判定結果: 基準外リスク高（適合度: {score}%）**\n\n不適合項目（{ng_count}件）が検出されました。偽物・コピー品のリスクが高いためご注意ください。")
+            elif warn_count > 1:
+                st.warning(f"⚠️ **判定結果: 要詳細査定（適合度: {score}%）**\n\n一部の項目（{warn_count}件）で留保されています。詳細査定をおすすめします。")
+            else:
+                st.success(f"🟢 **判定結果: 基準内（正規品の可能性極めて高 / 適合度: {score}%）**\n\nすべてのWeb基準項目を満たしています。提示相場での査定を行っていただけます。")
+
+            if items:
                 st.divider()
                 st.markdown("### 📁 抽出根拠となったWeb上の類似商品データ（本体のみ抽出）")
                 for item in items:
@@ -471,7 +468,5 @@ with col2:
                     with c_info:
                         st.write(f"**{item['title']}**")
                         st.write(f"取引価格: **¥{item['price']:,}**")
-            else:
-                st.error("⚠️ 有効な相場データが見つかりませんでした。型番やモデル名、または素材・文字盤等の組み合わせを変更してお試しください。")
     else:
         st.info("👈 左側の枠に型番やモデル名を入力し、検索ボタンを押してください。")
