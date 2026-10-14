@@ -189,7 +189,7 @@ def fetch_authenticity_guides(keyword):
             {"item": "🔍 ルーレット刻印（インナーリング）の文字精度", "detail": "文字盤外周の「ROLEX」ロゴの配置が正しく（1〜5時位置はR、7〜11時位置はXが分目盛りに一致）、6時位置のシリアル刻印の打刻が均一で美しいか。"},
             {"item": "サイクロップレンズ（日付拡大）と無反射コーティング", "detail": "デイトジャスト等の日付窓拡大レンズの倍率が正確に約2.5倍であり、無反射コーティングの青みや透明度が正常か。"},
             {"item": "針（ポインター）側面断面とダイヤルインデックス", "detail": "針の側面断面にバリや加工傷がなく研磨されているか。インデックスのクロマライト夜光の塗布面が凹凸なく均一か。"},
-            {"item": "セラクロムベゼル凹み刻印とプラチナコーティング", "detail": "ベゼルの数字凹み部分にプラチナPVD蒸着がムラなく施され、フォントの深さやエッジの鋭さが正しいか。"},
+            {"item": "セラクロムベゼルの文字凹みと仕上げ", "detail": "セラクロムベゼルの数字凹み部分にプラチナPVD蒸着がムラなく施され、フォントの深さやエッジの鋭さが正しいか。"},
             {"item": "ブレスレットコマの側面マイナスネジ頭", "detail": "ブレスレットのコマ調整用ねじ頭のマイナス溝に傷や潰れがなく、ネジ穴の面取り処理が滑らかか。"},
             {"item": "クラスプ（バックル）内部の刻印打刻と王冠マーク", "detail": "バックル開閉部の王冠マークおよび内部の「ROLEX」ロゴ刻印の深さ・フォント・磨き加工の滑らかさ。"},
             {"item": "フラッシュフィット（FF）とケースのスキマ精度", "detail": "ブレスレットとケースの接続部（FF）にグラつきや不自然なスキマ（隙間）がなく、一体感があるか。"},
@@ -236,38 +236,18 @@ def fetch_authenticity_guides(keyword):
             {"item": "縫製（ステッチ）のピッチとコバの処理", "detail": "糸の太さ・縫い目ピッチの一貫性、縁のコバニスの仕上げ。"}
         ]
 
-# --- WEBスクレイピング＆相場幅算出（CloudScraper対応・海外IP遮断回避） ---
-def search_clean_market_prices(search_query, selected_material, selected_type, selected_dial, selected_deco):
-    raw_query = search_query.strip()
+# --- 安定版スクレイピング＆段階的フォールバック算出ロジック ---
+def execute_web_scrape(query):
+    url = f"https://auctions.yahoo.co.jp/search/search?p={query}&va={query}&exflg=1&b=1&n=50"
     
-    for key, val in BRAND_COMPLETION_MAP.items():
-        if raw_query == key:
-            raw_query = val
-            break
-            
-    full_query_parts = [raw_query]
-    if selected_material != "全素材":
-        full_query_parts.append(selected_material)
-    if selected_type != "全アイテム":
-        full_query_parts.append(selected_type)
-    if selected_dial != "全カラー":
-        full_query_parts.append(selected_dial)
-    if selected_deco != "指定なし":
-        full_query_parts.append(selected_deco)
-        
-    search_query = " ".join(full_query_parts)
-            
-    url = f"https://auctions.yahoo.co.jp/search/search?p={search_query}&va={search_query}&exflg=1&b=1&n=50"
-    
-    q_upper = search_query.upper()
+    q_upper = query.upper()
     min_price_threshold = 30000
     if any(w in q_upper for w in ["デイトナ", "ロレックス", "ROLEX", "パテック", "PATEK", "バーキン", "ケリー", "116500", "126610"]):
-        min_price_threshold = 200000
+        min_price_threshold = 150000
     elif any(w in q_upper for w in ["デイトジャスト", "オメガ", "シャネル", "マトラッセ", "シェーヌダンクル"]):
-        min_price_threshold = 80000
+        min_price_threshold = 50000
 
     try:
-        # cloudscraperを使用してWebアクセスのCloudflare/UserAgentブロックを自動回避
         scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
@@ -275,7 +255,7 @@ def search_clean_market_prices(search_query, selected_material, selected_type, s
                 'desktop': True
             }
         )
-        response = scraper.get(url, timeout=12)
+        response = scraper.get(url, timeout=10)
         if response.status_code != 200:
             return None, []
         
@@ -320,13 +300,50 @@ def search_clean_market_prices(search_query, selected_material, selected_type, s
                 "flea_min": int(p_min * 1.10), "flea_max": int(p_max * 1.25),
                 "auc_min": p_min, "auc_max": p_max,
                 "count": len(clean_prices),
-                "query_used": search_query
+                "query_used": query
             }
             return stats, items[:6]
         else:
             return None, []
     except Exception:
         return None, []
+
+def search_clean_market_prices(search_query, selected_material, selected_type, selected_dial, selected_deco):
+    raw_query = search_query.strip()
+    
+    # 補完マップ適用
+    for key, val in BRAND_COMPLETION_MAP.items():
+        if raw_query == key:
+            raw_query = val
+            break
+
+    # 段階的フォールバック検索（指定がある時だけクエリに付加）
+    search_queries_to_try = []
+    
+    # 1. フル条件
+    full_parts = [raw_query]
+    if selected_material != "全素材":
+        full_parts.append(selected_material)
+    if selected_dial != "全カラー":
+        full_parts.append(selected_dial)
+    if selected_deco != "指定なし":
+        full_parts.append(selected_deco)
+    search_queries_to_try.append(" ".join(full_parts))
+
+    # 2. 素材指定のみ
+    if selected_material != "全素材":
+        search_queries_to_try.append(f"{raw_query} {selected_material}")
+
+    # 3. 単体モデル名/型番のみ（未選択時・セーフティ用）
+    search_queries_to_try.append(raw_query)
+
+    # 順番にWebスクレイピングを実行し、ヒットした最精度の結果を採用
+    for q in search_queries_to_try:
+        stats, items = execute_web_scrape(q)
+        if stats:
+            return stats, items
+
+    return None, []
 
 # --- メイン画面レイアウト ---
 col1, col2 = st.columns([1, 2.2])
@@ -335,7 +352,7 @@ with col1:
     st.subheader("1. 型番・モデル名の入力")
     search_keyword = st.text_input(
         "型番やブランドモデル名を入力してください", 
-        placeholder="例: デイトジャスト, 116500LN, プルミエール, タンブール, シェーヌダンクル"
+        placeholder="例: デイトナ, デイトジャスト, プルミエール, タンブール, シェーヌダンクル"
     )
     
     st.markdown("**⚙️ 素材・アイテム・時計仕様の絞り込み（オプション）**")
@@ -344,7 +361,7 @@ with col1:
     with row1_col1:
         selected_material = st.selectbox(
             "素材選択",
-            ["全素材", "シルバー", "ゴールド", "イエローゴールド", "ピンクゴールド", "ホワイトゴールド", "コンビ", "プラチナ", "ステンレス", "キャビアスキン", "ラムスキン", "トゴ"]
+            ["全素材", "ステンレス", "シルバー", "ゴールド", "イエローゴールド", "ピンクゴールド", "ホワイトゴールド", "コンビ", "プラチナ", "キャビアスキン", "ラムスキン", "トゴ"]
         )
     with row1_col2:
         selected_type = st.selectbox(
@@ -369,8 +386,8 @@ with col1:
     st.markdown("""
     ---
     **💡 入力のコツ:**
-    - 型番（`116500LN`, `M46035` 等）での検索は一発でピンポイント相場が出力されます。
-    - 単体モデル名で検索する場合は「素材」や「文字盤色」を指定すると価格帯精度が向上します。
+    - **未選択でも動作:** 条件を選ばなくても全体相場が出力されます。条件を選ぶ（例: `ステンレス` ＋ `黒文字盤`）とさらに細かく絞り込めます。
+    - 型番（`116500LN`, `M46035` 等）での直接検索にも対応しています。
     """)
 
 with col2:
@@ -378,7 +395,7 @@ with col2:
     
     if search_button:
         if not search_keyword.strip():
-            st.error("⚠️ 型番やモデル名（例: デイトジャスト, タンブール, シェーヌダンクル）を入力してください。")
+            st.error("⚠️ 型番やモデル名（例: デイトナ, タンブール, シェーヌダンクル）を入力してください。")
         else:
             st.session_state["analyzed_keyword"] = search_keyword.strip()
             st.session_state["selected_material"] = selected_material
